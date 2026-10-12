@@ -1,0 +1,873 @@
+
+-- 🍍 UNIVERSAL CONTROL CENTER
+-- Full replacement LocalScript
+-- Place in StarterPlayer > StarterPlayerScripts
+-- Intended for your own Roblox experience.
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local oldGui = playerGui:FindFirstChild("UniversalControlGui")
+if oldGui then oldGui:Destroy() end
+
+pcall(function()
+	RunService:UnbindFromRenderStep("UniversalCameraUpdate")
+end)
+
+local COLORS = {
+	Background = Color3.fromRGB(17, 27, 23),
+	Panel = Color3.fromRGB(27, 43, 35),
+	PanelLight = Color3.fromRGB(38, 58, 46),
+	Green = Color3.fromRGB(116, 220, 104),
+	Gold = Color3.fromRGB(255, 205, 91),
+	White = Color3.fromRGB(244, 248, 241),
+	Muted = Color3.fromRGB(160, 181, 164),
+	Red = Color3.fromRGB(239, 99, 99),
+}
+
+local speedMultiplier = 1
+local highlightsEnabled = false
+local spectating = false
+local lockEnabled = false
+local smoothness = 0.55
+local spectateIndex = 0
+local spectateTarget = nil
+
+-- Lock-on input settings
+local lockKey = Enum.KeyCode.Q
+local lockMouseButton = nil
+local waitingForBinding = false
+local activationMode = "Toggle" -- Toggle or Hold
+local holdInputActive = false
+
+local camera = workspace.CurrentCamera
+
+local function create(className, properties, parent)
+	local object = Instance.new(className)
+	for property, value in pairs(properties or {}) do
+		object[property] = value
+	end
+	object.Parent = parent
+	return object
+end
+
+local function round(parent, radius)
+	create("UICorner", {
+		CornerRadius = UDim.new(0, radius or 10),
+	}, parent)
+end
+
+local function label(parent, text, position, size, textSize, color)
+	return create("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = position,
+		Size = size,
+		Font = Enum.Font.GothamMedium,
+		Text = text,
+		TextSize = textSize or 14,
+		TextColor3 = color or COLORS.White,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+	}, parent)
+end
+
+local function button(parent, text, position, size, callback, color)
+	local b = create("TextButton", {
+		Position = position,
+		Size = size,
+		BackgroundColor3 = color or COLORS.PanelLight,
+		BorderSizePixel = 0,
+		AutoButtonColor = true,
+		Font = Enum.Font.GothamBold,
+		Text = text,
+		TextSize = 13,
+		TextColor3 = COLORS.White,
+	}, parent)
+
+	round(b, 8)
+
+	b.Activated:Connect(function()
+		if callback then callback() end
+	end)
+
+	return b
+end
+
+local function draggable(handle, target)
+	local dragging = false
+	local dragStart
+	local startPosition
+
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+
+			dragging = true
+			dragStart = input.Position
+			startPosition = target.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (
+			input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch
+		) then
+			local delta = input.Position - dragStart
+
+			target.Position = UDim2.new(
+				startPosition.X.Scale,
+				startPosition.X.Offset + delta.X,
+				startPosition.Y.Scale,
+				startPosition.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+-- Main GUI
+local gui = create("ScreenGui", {
+	Name = "UniversalControlGui",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui)
+
+local launcher = button(
+	gui,
+	"🍍",
+	UDim2.new(0, 20, 0.5, -25),
+	UDim2.fromOffset(54, 54),
+	nil,
+	COLORS.Green
+)
+launcher.TextSize = 28
+launcher.TextColor3 = COLORS.Background
+round(launcher, 18)
+
+local main = create("Frame", {
+	Name = "MainWindow",
+	Size = UDim2.fromOffset(480, 480),
+	Position = UDim2.new(0.5, -240, 0.5, -240),
+	BackgroundColor3 = COLORS.Background,
+	BorderSizePixel = 0,
+}, gui)
+
+round(main, 16)
+draggable(main, main)
+
+launcher.Activated:Connect(function()
+	main.Visible = not main.Visible
+end)
+
+-- Header
+local header = create("Frame", {
+	Size = UDim2.new(1, 0, 0, 76),
+	BackgroundColor3 = COLORS.Panel,
+	BorderSizePixel = 0,
+}, main)
+round(header, 16)
+
+create("Frame", {
+	Position = UDim2.new(0, 0, 1, -15),
+	Size = UDim2.new(1, 0, 0, 15),
+	BackgroundColor3 = COLORS.Panel,
+	BorderSizePixel = 0,
+}, header)
+
+label(
+	header,
+	"🍍  UNIVERSAL",
+	UDim2.fromOffset(18, 8),
+	UDim2.new(1, -75, 0, 32),
+	23,
+	COLORS.Green
+).Font = Enum.Font.GothamBlack
+
+label(
+	header,
+	"CONTROL CENTER  •  TROPICAL EDITION",
+	UDim2.fromOffset(20, 43),
+	UDim2.new(1, -40, 0, 20),
+	10,
+	COLORS.Gold
+)
+
+button(
+	header,
+	"×",
+	UDim2.new(1, -43, 0, 12),
+	UDim2.fromOffset(30, 30),
+	function()
+		main.Visible = false
+	end
+).TextSize = 20
+
+-- Tabs and pages
+local tabBar = create("Frame", {
+	Position = UDim2.fromOffset(12, 85),
+	Size = UDim2.new(1, -24, 0, 40),
+	BackgroundTransparency = 1,
+}, main)
+
+local pageHolder = create("Frame", {
+	Position = UDim2.fromOffset(12, 133),
+	Size = UDim2.new(1, -24, 1, -172),
+	BackgroundTransparency = 1,
+}, main)
+
+local tabNames = {"Movement", "Visuals", "Spectate", "Combat"}
+local pages = {}
+local tabButtons = {}
+
+for i, name in ipairs(tabNames) do
+	local tab = button(
+		tabBar,
+		name,
+		UDim2.new((i - 1) / #tabNames, 3, 0, 0),
+		UDim2.new(1 / #tabNames, -6, 1, 0),
+		nil,
+		i == 1 and COLORS.Green or COLORS.Panel
+	)
+
+	tab.TextSize = 11
+	if i == 1 then
+		tab.TextColor3 = COLORS.Background
+	end
+
+	tabButtons[name] = tab
+
+	local page = create("ScrollingFrame", {
+		Name = name .. "Page",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = COLORS.Green,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		Visible = i == 1,
+	}, pageHolder)
+
+	create("UIListLayout", {
+		Padding = UDim.new(0, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, page)
+
+	create("UIPadding", {
+		PaddingTop = UDim.new(0, 4),
+		PaddingLeft = UDim.new(0, 3),
+		PaddingRight = UDim.new(0, 3),
+		PaddingBottom = UDim.new(0, 8),
+	}, page)
+
+	pages[name] = page
+
+	tab.Activated:Connect(function()
+		for otherName, otherPage in pairs(pages) do
+			otherPage.Visible = otherName == name
+
+			tabButtons[otherName].BackgroundColor3 =
+				otherName == name and COLORS.Green or COLORS.Panel
+
+			tabButtons[otherName].TextColor3 =
+				otherName == name and COLORS.Background or COLORS.White
+		end
+	end)
+end
+
+local function section(parent, title, description)
+	local frame = create("Frame", {
+		Size = UDim2.new(1, -4, 0, description and 66 or 42),
+		BackgroundColor3 = COLORS.Panel,
+		BorderSizePixel = 0,
+	}, parent)
+	round(frame, 10)
+
+	label(
+		frame,
+		title,
+		UDim2.fromOffset(12, 5),
+		UDim2.new(1, -24, 0, 25),
+		14,
+		COLORS.Green
+	).Font = Enum.Font.GothamBold
+
+	if description then
+		label(
+			frame,
+			description,
+			UDim2.fromOffset(12, 31),
+			UDim2.new(1, -24, 0, 27),
+			11,
+			COLORS.Muted
+		)
+	end
+
+	return frame
+end
+
+local function control(parent, height)
+	local frame = create("Frame", {
+		Size = UDim2.new(1, -4, 0, height),
+		BackgroundColor3 = COLORS.Panel,
+		BorderSizePixel = 0,
+	}, parent)
+	round(frame, 10)
+	return frame
+end
+
+-- Movement tab
+local movement = pages.Movement
+section(movement, "MOVEMENT SETTINGS", "Adjust your character's walking speed.")
+
+local speedControl = control(movement, 88)
+
+label(speedControl, "Speed multiplier",
+	UDim2.fromOffset(12, 9), UDim2.new(1, -24, 0, 23), 13)
+
+local speedValue = label(speedControl, "1x",
+	UDim2.new(1, -65, 0, 9), UDim2.fromOffset(48, 23), 14, COLORS.Gold)
+speedValue.TextXAlignment = Enum.TextXAlignment.Right
+
+local speedBar = create("Frame", {
+	Position = UDim2.fromOffset(70, 53),
+	Size = UDim2.new(1, -140, 0, 10),
+	BackgroundColor3 = COLORS.PanelLight,
+	BorderSizePixel = 0,
+}, speedControl)
+round(speedBar, 6)
+
+local speedFill = create("Frame", {
+	Size = UDim2.new(0.2, 0, 1, 0),
+	BackgroundColor3 = COLORS.Green,
+	BorderSizePixel = 0,
+}, speedBar)
+round(speedFill, 6)
+
+local function applySpeed()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+	if humanoid then
+		humanoid.WalkSpeed = 16 * speedMultiplier
+	end
+
+	speedValue.Text = speedMultiplier .. "x"
+	speedFill.Size = UDim2.new(speedMultiplier / 5, 0, 1, 0)
+end
+
+button(speedControl, "−",
+	UDim2.fromOffset(12, 42), UDim2.fromOffset(48, 34), function()
+		speedMultiplier = math.max(1, speedMultiplier - 1)
+		applySpeed()
+	end)
+
+local plus = button(speedControl, "+",
+	UDim2.new(1, -60, 0, 42), UDim2.fromOffset(48, 34), function()
+		speedMultiplier = math.min(5, speedMultiplier + 1)
+		applySpeed()
+	end, COLORS.Green)
+plus.TextColor3 = COLORS.Background
+
+local speedInfo = control(movement, 48)
+label(speedInfo, "Base WalkSpeed × multiplier",
+	UDim2.fromOffset(12, 0), UDim2.new(1, -24, 1, 0), 12, COLORS.Muted)
+
+player.CharacterAdded:Connect(function(character)
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	if humanoid then
+		humanoid.WalkSpeed = 16 * speedMultiplier
+	end
+end)
+
+-- Visuals tab
+local visuals = pages.Visuals
+section(visuals, "PLAYER VISUALS", "Toggle character highlights in your experience.")
+
+local highlightButton
+
+local function updateHighlight(other)
+	if not highlightsEnabled or other == player or not other.Character then
+		return
+	end
+
+	if other.Character:FindFirstChild("UniversalPlayerHighlight") then
+		return
+	end
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "UniversalPlayerHighlight"
+	highlight.FillColor = COLORS.Green
+	highlight.OutlineColor = COLORS.Gold
+	highlight.FillTransparency = 0.65
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = other.Character
+end
+
+local function setHighlights(enabled)
+	highlightsEnabled = enabled
+
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player and other.Character then
+			local existing = other.Character:FindFirstChild("UniversalPlayerHighlight")
+
+			if enabled and not existing then
+				updateHighlight(other)
+			elseif not enabled and existing then
+				existing:Destroy()
+			end
+		end
+	end
+
+	highlightButton.Text = enabled and "Highlights: ON" or "Highlights: OFF"
+	highlightButton.BackgroundColor3 = enabled and COLORS.Green or COLORS.PanelLight
+	highlightButton.TextColor3 = enabled and COLORS.Background or COLORS.White
+end
+
+highlightButton = button(control(visuals, 58), "Highlights: OFF",
+	UDim2.fromOffset(10, 8), UDim2.new(1, -20, 1, -16), function()
+		setHighlights(not highlightsEnabled)
+	end)
+
+-- Spectate tab
+local spectate = pages.Spectate
+section(spectate, "SPECTATOR MODE", "Cycle through living players or return to yourself.")
+
+local targetControl = control(spectate, 48)
+local targetLabel = label(targetControl, "Target: None",
+	UDim2.fromOffset(12, 0), UDim2.new(1, -24, 1, 0), 13, COLORS.Gold)
+
+local function getLivingPlayers()
+	local result = {}
+
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player then
+			local char = other.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+			if hum and hum.Health > 0 then
+				table.insert(result, other)
+			end
+		end
+	end
+
+	table.sort(result, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+
+	return result
+end
+
+local function restoreCamera()
+	camera = workspace.CurrentCamera
+	local char = player.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+	if camera and hum then
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = hum
+	end
+end
+
+local function setLock(enabled)
+	lockEnabled = enabled
+
+	if enabled then
+		spectating = false
+		spectateTarget = nil
+		holdInputActive = activationMode == "Hold"
+		restoreCamera()
+	else
+		holdInputActive = false
+	end
+
+	if lockButton then
+		lockButton.Text = enabled and "Lock-on: ON" or "Lock-on: OFF"
+		lockButton.BackgroundColor3 = enabled and COLORS.Green or COLORS.PanelLight
+		lockButton.TextColor3 = enabled and COLORS.Background or COLORS.White
+	end
+end
+
+local function stopSpectating()
+	spectating = false
+	spectateTarget = nil
+	spectateIndex = 0
+	restoreCamera()
+end
+
+local function nextSpectateTarget()
+	local targets = getLivingPlayers()
+
+	if #targets == 0 then
+		stopSpectating()
+		return
+	end
+
+	spectateIndex = (spectateIndex % #targets) + 1
+	spectateTarget = targets[spectateIndex]
+	spectating = true
+	lockEnabled = false
+	holdInputActive = false
+
+	camera = workspace.CurrentCamera
+	local char = spectateTarget.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+	if camera and hum then
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = hum
+	end
+
+	if lockButton then
+		lockButton.Text = "Lock-on: OFF"
+		lockButton.BackgroundColor3 = COLORS.PanelLight
+		lockButton.TextColor3 = COLORS.White
+	end
+end
+
+button(control(spectate, 54), "Next Player  →",
+	UDim2.fromOffset(10, 8), UDim2.new(1, -20, 1, -16),
+	nextSpectateTarget, COLORS.Green).TextColor3 = COLORS.Background
+
+button(control(spectate, 54), "Stop Spectating",
+	UDim2.fromOffset(10, 8), UDim2.new(1, -20, 1, -16),
+	stopSpectating, COLORS.Red)
+
+-- Combat tab
+local combat = pages.Combat
+section(combat, "CAMERA LOCK-ON", "Choose an activation input and Hold or Toggle mode.")
+
+local lockButton
+local bindingButton
+local bindingStatus
+local modeButton
+
+local function bindingName()
+	if lockMouseButton then
+		return lockMouseButton.Name
+	end
+	return lockKey and lockKey.Name or "Unassigned"
+end
+
+local lockControl = control(combat, 58)
+lockButton = button(lockControl, "Lock-on: OFF",
+	UDim2.fromOffset(10, 8), UDim2.new(1, -20, 1, -16), function()
+		setLock(not lockEnabled)
+	end)
+
+local bindControl = control(combat, 92)
+
+label(bindControl, "Activation input",
+	UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 22), 13)
+
+bindingStatus = label(bindControl, "Current: Q",
+	UDim2.fromOffset(12, 34), UDim2.new(0.46, -8, 0, 32), 12, COLORS.Gold)
+
+bindingButton = button(bindControl, "Change Key",
+	UDim2.new(0.5, 0, 0, 31), UDim2.new(0.5, -10, 0, 34), function()
+		waitingForBinding = true
+		bindingButton.Text = "Press a key..."
+		bindingStatus.Text = "Current: " .. bindingName()
+	end, COLORS.Green)
+bindingButton.TextColor3 = COLORS.Background
+
+local bindingHelp = control(combat, 62)
+label(bindingHelp,
+	"MouseButton1 = left click\nMouseButton2 = right click\nMouseButton3 = middle click",
+	UDim2.fromOffset(12, 5), UDim2.new(1, -24, 1, -10), 11, COLORS.Muted)
+
+-- Hold / Toggle selector
+local modeControl = control(combat, 76)
+
+label(modeControl, "Activation mode",
+	UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 22), 13)
+
+modeButton = button(modeControl, "Mode: TOGGLE",
+	UDim2.fromOffset(10, 34), UDim2.new(1, -20, 0, 32), function()
+		activationMode = activationMode == "Toggle" and "Hold" or "Toggle"
+		holdInputActive = false
+
+		modeButton.Text = "Mode: " .. string.upper(activationMode)
+
+		if activationMode == "Hold" then
+			setLock(false)
+		end
+	end, COLORS.Green)
+modeButton.TextColor3 = COLORS.Background
+
+-- Smoothness slider
+local smoothControl = control(combat, 90)
+
+label(smoothControl, "Camera response speed",
+	UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 22), 13)
+
+local smoothValue = label(smoothControl, "Fast • 55%",
+	UDim2.new(1, -115, 0, 7), UDim2.fromOffset(100, 22), 12, COLORS.Gold)
+smoothValue.TextXAlignment = Enum.TextXAlignment.Right
+
+local sliderTrack = create("TextButton", {
+	Position = UDim2.fromOffset(12, 45),
+	Size = UDim2.new(1, -24, 0, 12),
+	BackgroundColor3 = COLORS.PanelLight,
+	BorderSizePixel = 0,
+	Text = "",
+	AutoButtonColor = false,
+}, smoothControl)
+round(sliderTrack, 6)
+
+local sliderFill = create("Frame", {
+	Size = UDim2.new(smoothness, 0, 1, 0),
+	BackgroundColor3 = COLORS.Green,
+	BorderSizePixel = 0,
+}, sliderTrack)
+round(sliderFill, 6)
+
+local sliderDot = create("Frame", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(smoothness, 0, 0.5, 0),
+	Size = UDim2.fromOffset(18, 18),
+	BackgroundColor3 = COLORS.Gold,
+	BorderSizePixel = 0,
+}, sliderTrack)
+round(sliderDot, 9)
+
+local function setSmoothnessFromX(x)
+	local width = math.max(1, sliderTrack.AbsoluteSize.X)
+	smoothness = math.clamp(
+		(x - sliderTrack.AbsolutePosition.X) / width,
+		0.05,
+		1
+	)
+
+	sliderFill.Size = UDim2.new(smoothness, 0, 1, 0)
+	sliderDot.Position = UDim2.new(smoothness, 0, 0.5, 0)
+
+	local percent = math.floor(smoothness * 100 + 0.5)
+	local speedText = percent >= 70 and "Very Fast"
+		or (percent >= 35 and "Fast" or "Smooth")
+
+	smoothValue.Text = speedText .. " • " .. percent .. "%"
+end
+
+local sliderDragging = false
+
+sliderTrack.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		sliderDragging = true
+		setSmoothnessFromX(input.Position.X)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if sliderDragging and (
+		input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch
+	) then
+		setSmoothnessFromX(input.Position.X)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		sliderDragging = false
+	end
+end)
+
+local function isLockInput(input)
+	local matchesKey = lockKey ~= nil
+		and input.UserInputType == Enum.UserInputType.Keyboard
+		and input.KeyCode == lockKey
+
+	local matchesMouse = lockMouseButton ~= nil
+		and input.UserInputType == lockMouseButton
+
+	return matchesKey or matchesMouse
+end
+
+-- Keybind capture and Hold / Toggle input
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if waitingForBinding then
+		local inputType = input.UserInputType
+		local isMouse = inputType == Enum.UserInputType.MouseButton1
+			or inputType == Enum.UserInputType.MouseButton2
+			or inputType == Enum.UserInputType.MouseButton3
+
+		if inputType == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.Escape then
+				waitingForBinding = false
+				bindingButton.Text = "Change Key"
+				return
+			end
+
+			lockKey = input.KeyCode
+			lockMouseButton = nil
+			waitingForBinding = false
+			bindingButton.Text = "Change Key"
+			bindingStatus.Text = "Current: " .. bindingName()
+			return
+		elseif isMouse then
+			lockMouseButton = inputType
+			lockKey = nil
+			waitingForBinding = false
+			bindingButton.Text = "Change Key"
+			bindingStatus.Text = "Current: " .. bindingName()
+			return
+		end
+
+		return
+	end
+
+	if gameProcessed or UserInputService:GetFocusedTextBox() then
+		return
+	end
+
+	if not isLockInput(input) then
+		return
+	end
+
+	if activationMode == "Toggle" then
+		setLock(not lockEnabled)
+	else
+		holdInputActive = true
+		setLock(true)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if activationMode == "Hold" and isLockInput(input) then
+		holdInputActive = false
+		setLock(false)
+	end
+end)
+
+UserInputService.WindowFocusReleased:Connect(function()
+	if activationMode == "Hold" then
+		holdInputActive = false
+		setLock(false)
+	end
+end)
+
+-- Player joins and leaves
+Players.PlayerAdded:Connect(function(other)
+	other.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		updateHighlight(other)
+	end)
+end)
+
+for _, other in ipairs(Players:GetPlayers()) do
+	if other ~= player then
+		other.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			updateHighlight(other)
+		end)
+		updateHighlight(other)
+	end
+end
+
+Players.PlayerRemoving:Connect(function(leaving)
+	if leaving == spectateTarget then
+		stopSpectating()
+	end
+end)
+
+local function nearestLivingPlayer()
+	local char = player.Character
+	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return nil end
+
+	local nearest
+	local nearestDistance = math.huge
+
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player then
+			local targetChar = other.Character
+			local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+			local root = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+
+			if hum and hum.Health > 0 and root then
+				local distance = (root.Position - myRoot.Position).Magnitude
+				if distance < nearestDistance then
+					nearestDistance = distance
+					nearest = other
+				end
+			end
+		end
+	end
+
+	return nearest
+end
+
+-- Camera update
+RunService:BindToRenderStep(
+	"UniversalCameraUpdate",
+	Enum.RenderPriority.Camera.Value + 1,
+	function(deltaTime)
+		camera = workspace.CurrentCamera
+		if not camera then return end
+
+		if spectating then
+			if not spectateTarget or not spectateTarget.Parent then
+				stopSpectating()
+				return
+			end
+
+			local char = spectateTarget.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+			if hum and hum.Health > 0 then
+				camera.CameraType = Enum.CameraType.Custom
+				camera.CameraSubject = hum
+				targetLabel.Text = "Target: " .. spectateTarget.DisplayName
+			else
+				targetLabel.Text = "Target: Respawning..."
+			end
+			return
+		end
+
+		if lockEnabled then
+			local target = nearestLivingPlayer()
+			local char = target and target.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+
+			if root then
+				local desired = CFrame.lookAt(camera.CFrame.Position, root.Position)
+				local alpha = 1 - math.exp(-smoothness * 18 * deltaTime)
+				camera.CFrame = camera.CFrame:Lerp(desired, alpha)
+				targetLabel.Text = "Target: " .. target.DisplayName
+			else
+				targetLabel.Text = "Target: No players found"
+			end
+		else
+			targetLabel.Text = "Target: None"
+		end
+	end
+)
+
+label(
+	main,
+	"UNIVERSAL • TROPICAL CONTROL CENTER",
+	UDim2.new(0, 14, 1, -29),
+	UDim2.new(1, -28, 0, 18),
+	9,
+	COLORS.Muted
+).TextXAlignment = Enum.TextXAlignment.Center
+
+applySpeed()
+setHighlights(false)
+setLock(false)
+
+print("🍍 UNIVERSAL Control Center loaded successfully!")
